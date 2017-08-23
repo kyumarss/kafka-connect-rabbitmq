@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;
@@ -49,12 +50,14 @@ public class RabbitMQSinkTask extends SinkTask {
   public void put(Collection<SinkRecord> sinkRecords) {
     for (SinkRecord record : sinkRecords) {
       log.trace("current sinkRecord value: " + record.value());
-      //assumption: value is a string-convertible object (i.e., a valid JSON)
+      if (!(record.value() instanceof byte[])) {
+        throw new ConnectException("the value of the record has an invalid type (must be of type byte[])");
+      }
       try {
-        channel.basicPublish(this.config.exchange, this.config.routingKey, null, record.value().toString().getBytes());
+        channel.basicPublish(this.config.exchange, this.config.routingKey, null, (byte[]) record.value());
       } catch (IOException e) {
-        log.error("There was an error while transforming the outgoing message");
-        throw new ConnectException(e);
+        log.error("There was an error while publishing the outgoing message to RabbitMQ");
+        throw new RetriableException(e);
       }
     }
   }
